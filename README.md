@@ -1,151 +1,262 @@
-# Short-Read Assembly
-
 ![Version](https://img.shields.io/badge/version-0.8.0-brightgreen)
-
-<!-- [![Documentation Status](https://img.shields.io/badge/docs-passing-brightgreen.svg)](https://camp-documentation.readthedocs.io/en/latest/shortreadassembly/index.html) -->
-<!-- [![Documentation Status](https://img.shields.io/readthedocs/camp_short-read-assembly)](https://camp-documentation.readthedocs.io/en/latest/shortreadassembly/index.html) -->
 
 ## Overview
 
-This module is designed to function as both a standalone short-read assembly pipeline as well as a component of the larger CAMP metagenome analysis pipeline. As such, it is both self-contained (ex. instructions included for the setup of a versioned environment, etc.), and seamlessly compatible with other CAMP modules (ex. ingests and spawns standardized input/output config files, etc.). 
+This module is designed to function as both a standalone MAG short-read assembly pipeline as well as a component of the larger CAMP metagenome analysis pipeline. As such, it is both self-contained (ex. instructions included for the setup of a versioned environment, etc.), and seamlessly compatible with other CAMP modules (ex. ingests and spawns standardized input/output config files, etc.).
 
-Both MetaSPAdes and MegaHit are provided as assembly algorithm options. 
+Both MetaSPAdes and MegaHit are provided as assembly algorithm options, with QUAST for assembly quality assessment.
+
+---
 
 ## Installation
 
-### Install `conda`
+### Option 1: Singularity/Apptainer (Recommended — HPC & Linux servers)
 
-If you don't already have `conda` handy, we recommend installing `miniforge`, which is a minimal conda installer that, by default, installs packages from open-source community-driven channels such as `conda-forge`.
-```Bash
-# If you don't already have conda on your system...
-wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+No conda setup required. Singularity pulls the image directly from Docker Hub and caches it as a `.sif` file:
+
+```bash
+singularity pull camp-srasm.sif docker://raquelle70679/camp-srasm:latest
 ```
 
-Run the following command to initialize Conda for your shell. This will configure your shell to recognize conda activate. 
-```Bash
-conda init
+Run the built-in test to verify:
+```bash
+singularity run camp-srasm.sif test
 ```
 
-Restart your terminal or run:
-```Bash
-source ~/.bashrc  # For bash users
-source ~/.zshrc   # For zsh users
-```
-### Setting up the Short-Read Assembly Module
+> **Note:** Apptainer is the new name for Singularity (v3.9+). All commands are identical — just replace `singularity` with `apptainer`.
 
-1. Clone repo from [Github](<https://github.com/Meta-CAMP/camp_short-read-assembly>).
-```Bash
-git clone https://github.com/Meta-CAMP/camp_short-read-assembly
+### Option 2: Docker (Cloud VMs & local machines)
+
+```bash
+docker pull raquelle70679/camp-srasm:latest
 ```
 
-2. Set up the rest of the module interactively by running `setup.sh`. This will install the necessary conda environments (if they have not been installed already) and generate `parameters.yaml` as well as set up the paths in `test_data/samples.csv` for testing. 
-```Bash
-cd camp_short-read-assembly/
-source setup.sh
+Or build the image yourself from this repo:
 
-# If you encounter issues where conda activate is not recognized, follow these steps to properly initialize Conda
-conda init
-source ~/.bashrc # or source ~/.zshrc
+```bash
+git clone https://github.com/raquellewei/camp_short-read-assembly-docker
+cd camp_short-read-assembly-docker
+docker build -t camp-srasm .
 ```
 
-4. Make sure the installed pipeline works correctly. With 10 threads and a maximum of 40 GB allocated, the test dataset should finish in under 5 minutes.
-```Bash
-# Run tests on the included sample dataset
-conda activate camp
-python camp_short-read-assembly/workflow/short-read-assembly.py test
+### Option 3: Local conda install
+
+See the [original upstream repo](https://github.com/Meta-CAMP/camp_short-read-assembly) for conda-based local installation instructions using `setup.sh`.
+
+---
+
+## Using the Container
+
+### Input
+
+Prepare a `samples.csv` with absolute paths to your FASTQ files **as they will appear inside the container**:
+
+```
+sample_name,illumina_fwd,illumina_rev
+sample1,/data/input/sample1_1.fastq.gz,/data/input/sample1_2.fastq.gz
 ```
 
-## Using the Module
+### Output
 
-**Input**: `/path/to/samples.csv` provided by the user.
+The pipeline produces:
+- `/data/output/short-read-assembly/final_reports/samples.csv` — output config for the next CAMP module
+- `/data/output/short-read-assembly/final_reports/<sample>.metaspades.fasta` — MetaSPAdes assembled contigs
+- `/data/output/short-read-assembly/final_reports/<sample>.megahit.fasta` — MegaHit assembled contigs
+- `/data/output/short-read-assembly/final_reports/ctg_stats.csv` — per-assembler contig statistics
+- `/data/output/short-read-assembly/final_reports/quast.tar.gz` — QUAST assembly quality report
 
-**Output**: 1) An output config file summarizing 2) the module's outputs, which are assembled contigs. 
+---
 
-- `/path/to/work/dir/short-read-assembly/final_reports/samples.csv` for ingestion by the next module
+## Singularity Usage
 
-- `/path/to/work/dir/short-read-assembly/final_reports/sample_name.metaspades.fasta` and/or `sample_name.megahit.fasta`, which are the outputs of MetaSPAdes and MegaHit respectively
+### Running the Pipeline
 
-**Structure**:
+```bash
+singularity run \
+    --bind /path/to/your/fastqs:/data/input \
+    --bind /path/to/your/output:/data/output \
+    --bind /path/to/your/config:/data/config \
+    camp-srasm.sif run \
+    -c 10 \
+    -d /data/output \
+    -s /data/config/samples.csv
+```
+
+### Running on a Slurm Cluster
+
+```bash
+sbatch << 'EOF'
+#!/bin/bash
+#SBATCH --job-name=camp-srasm
+#SBATCH --cpus-per-task=10
+#SBATCH --mem=80G
+#SBATCH --output=camp-srasm-%j.log
+
+singularity run \
+    --bind /path/to/your/fastqs:/data/input \
+    --bind /path/to/your/output:/data/output \
+    --bind /path/to/your/config:/data/config \
+    camp-srasm.sif run \
+    -c 10 \
+    -d /data/output \
+    -s /data/config/samples.csv
+EOF
+```
+
+### Choosing Assembler(s)
+
+By default, both MetaSPAdes and MegaHit are run. To customize, create a `parameters.yaml`:
+
+```yaml
+conda_prefix: '/opt/conda/envs'
+
+# Run only MetaSPAdes, only MegaHit, or both:
+assembler: 'metaspades'       # or 'megahit' or 'metaspades,megahit'
+
+# SPAdes mode: 'meta' (metagenomics), 'rna', 'metaviral', 'metaplasmid'
+option: 'meta'
+```
+
+Then run with:
+
+```bash
+singularity run \
+    --bind /path/to/your/fastqs:/data/input \
+    --bind /path/to/your/output:/data/output \
+    --bind /path/to/your/config:/data/config \
+    camp-srasm.sif run \
+    -c 10 \
+    -d /data/output \
+    -s /data/config/samples.csv \
+    -p /data/config/parameters.yaml
+```
+
+### Running the Built-in Test
+
+```bash
+mkdir -p ~/camp-test-out
+singularity run \
+    --bind ~/camp-test-out:/data/test_out \
+    ~/CAMP/camp-srasm.sif test
+```
+
+Output will be written to `~/camp-test-out/` on your host so you can inspect it. Test output is kept separate from real experiment output (`/data/output`) to avoid mixing the two.
+
+### Cleanup Intermediate Files
+
+After confirming results, remove large intermediate files (SPAdes K-mer graphs, MegaHit intermediate contigs):
+
+```bash
+singularity run \
+    --bind /path/to/your/output:/data/output \
+    --bind /path/to/your/config:/data/config \
+    camp-srasm.sif cleanup \
+    -d /data/output \
+    -s /data/config/samples.csv
+```
+
+### Debugging
+
+Drop into a shell inside the container:
+
+```bash
+singularity shell camp-srasm.sif
+```
+
+Then manually invoke the pipeline:
+
+```bash
+conda run -n short-read-assembly \
+    python /opt/camp/workflow/short-read-assembly.py --help
+```
+
+### Custom Parameters
+
+The image ships with a default `parameters.yaml` at `/opt/camp/configs/parameters.yaml`. To override it, bind your own file:
+
+```bash
+singularity run \
+    --bind /path/to/my/parameters.yaml:/opt/camp/configs/parameters.yaml \
+    camp-srasm.sif run ...
+```
+
+Key parameters:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `assembler` | `'metaspades,megahit'` | Assembler(s) to run — comma-separated |
+| `option` | `'meta'` | SPAdes assembly mode (`meta`, `rna`, `metaviral`, `metaplasmid`) |
+| `conda_prefix` | `'/opt/conda/envs'` | Path to pre-built conda environments |
+
+---
+
+## Docker Usage
+
+### Running the Pipeline
+
+```bash
+docker run \
+    -v /path/to/your/fastqs:/data/input \
+    -v /path/to/your/output:/data/output \
+    -v /path/to/your/config:/data/config \
+    raquelle70679/camp-srasm:latest run \
+    -c 10 \
+    -d /data/output \
+    -s /data/config/samples.csv
+```
+
+### Running the Built-in Test
+
+```bash
+mkdir -p ~/camp-test-out
+docker run --rm \
+    -v ~/camp-test-out:/data/test_out \
+    raquelle70679/camp-srasm:latest test
+```
+
+### Debugging
+
+```bash
+docker run --entrypoint /bin/bash -it raquelle70679/camp-srasm:latest
+```
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `-c` | Number of CPU cores (default: 1; use 10+ for real datasets) |
+| `-d` | Working directory inside the container (e.g. `/data/output`) |
+| `-s` | Path to `samples.csv` inside the container |
+| `-p` | Path to a custom `parameters.yaml` (optional) |
+| `-r` | Path to a custom `resources.yaml` (optional) |
+| `--dry_run` | Print workflow commands without executing |
+| `--unlock` | Remove a lock on the working directory after a failed run |
+
+---
+
+## Module Structure
+
 ```
 └── workflow
     ├── Snakefile
     ├── short-read-assembly.py
     ├── utils.py
-    └── __init__.py
-```
-- `workflow/short-read-assembly.py`: Click-based CLI that wraps the `snakemake` and other commands for clean management of parameters, resources, and environment variables.
-- `workflow/Snakefile`: The `snakemake` pipeline. 
-- `workflow/utils.py`: Sample ingestion and work directory setup functions, and other utility functions used in the pipeline and the CLI.
-
-### Running the Workflow
-
-1. Make your own `samples.csv` based on the template in `configs/samples.csv`. Sample test data can be found in `test_data/`. 
-    - `ingest_samples` in `workflow/utils.py` expects Illumina reads in FastQ (may be gzipped) form and de novo assembled contigs in FastA form
-    - `samples.csv` requires either absolute paths or paths relative to the directory that the module is being run in
-
-2. Update the relevant parameters in `configs/parameters.yaml`.
-
-3. Update the computational resources available to the pipeline in `configs/resources.yaml`. 
-
-#### Command Line Deployment
-
-To run CAMP on the command line, use the following, where `/path/to/work/dir` is replaced with the absolute path of your chosen working directory, and `/path/to/samples.csv` is replaced with your copy of `samples.csv`. 
-    - The default number of cores available to Snakemake is 1 which is enough for test data, but should probably be adjusted to 10+ for a real dataset.
-    - Relative or absolute paths to the Snakefile and/or the working directory (if you're running elsewhere) are accepted!
-    - The parameters and resource config YAMLs can also be customized.
-```Bash
-conda activate camp
-python /path/to/camp_short-read-assembly/workflow/short-read-assembly.py \
-    (-c number_of_cores_allocated) \
-    (-p /path/to/parameters.yaml) \
-    (-r /path/to/resources.yaml) \
-    -d /path/to/work/dir \
-    -s /path/to/samples.csv
+    ├── __init__.py
+    └── ext/
+        └── scripts/
+            └── calc_ctg_lens.py
 ```
 
-#### Slurm Cluster Deployment
+- `workflow/short-read-assembly.py`: Click-based CLI wrapping Snakemake for clean management of parameters, resources, and environment variables.
+- `workflow/Snakefile`: The Snakemake pipeline definition.
+- `workflow/utils.py`: Sample ingestion, work directory setup, and other utility functions.
+- `workflow/ext/scripts/`: Helper scripts used within pipeline rules.
 
-To run CAMP on a job submission cluster (for now, only Slurm is supported), use the following.
-    - `--slurm` is an optional flag that submits all rules in the Snakemake pipeline as `sbatch` jobs. 
-    - In Slurm mode, the `-c` flag refers to the maximum number of `sbatch` jobs submitted in parallel, **not** the pool of cores available to run the jobs. Each job will request the number of cores specified by threads in `configs/resources/slurm.yaml`.
-```Bash
-conda activate camp
-sbatch -J jobname -o jobname.log << "EOF"
-#!/bin/bash
-python /path/to/camp_short-read-assembly/workflow/short-read-assembly.py --slurm \
-    (-c max_number_of_parallel_jobs_submitted) \
-    (-p /path/to/parameters.yaml) \
-    (-r /path/to/resources.yaml) \
-    -d /path/to/work/dir \
-    -s /path/to/samples.csv
-EOF
-```
-
-#### Finishing Up
-
-1. Each module includes a built-in Jupyter notebook designed to summarize data efficiently and visually. The following visualization generated by Dataviz.ipynb using the included test dataset. The test dataset is a toy human gut microbiome i.e.: simulated Illumina short reads covering 4 bacterial reference genomes from the Unified Human Gut Genome at 10X coverage per genome. To quickly visualize the overall distribution of contig lengths and other summary metrics (see example below), following the instructions in the Jupyter notebook:
-```Bash
-jupyter notebook &
-```
-<img width="1122" height="509" alt="short_read_asm_1" src="https://github.com/user-attachments/assets/4a89efa7-0a92-49f5-8efb-1d5cbee00e86" />
-
-
-2. After checking over `final_reports/` and making sure you have everything you need, you can delete all intermediate files to save space. 
-```Bash
-python3 /path/to/camp_short-read-assembly/workflow/short-read-assembly.py cleanup \
-    -d /path/to/work/dir \
-    -s /path/to/samples.csv
-```
-
-3. If for some reason the module keeps failing, CAMP can print a script containing all of the remaining commands that can be run manually. 
-```Bash
-python3 /path/to/camp_short-read-assembly/workflow/short-read-assembly.py --dry_run \
-    -d /path/to/work/dir \
-    -s /path/to/samples.csv
-```
+---
 
 ## Credits
 
-- This package was created with [Cookiecutter](https://github.com/cookiecutter/cookiecutter>) as a simplified version of the [project template](https://github.com/audreyr/cookiecutter-pypackage>).
+- This package was created with [Cookiecutter](https://github.com/cookiecutter/cookiecutter) as a simplified version of the [project template](https://github.com/audreyr/cookiecutter-pypackage).
+- Original upstream repo: [Meta-CAMP/camp_short-read-assembly](https://github.com/Meta-CAMP/camp_short-read-assembly)
 - Free software: MIT
 - Documentation: https://camp-documentation.readthedocs.io/en/latest/short-read-assembly.html

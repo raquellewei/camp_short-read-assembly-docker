@@ -143,10 +143,11 @@ def cleanup(work_dir, samples):
 
 
 @cli.command('test')
-def test(): 
+@click.option('-d', '--work_dir', type=click.Path(), default='/data/test_out', show_default=True, \
+    help='Absolute path to working directory for test output')
+def test(work_dir):
     main_dir = dirname(dirname(abspath(__file__))) # /path/to/main_dir/workflow/cli.py
     workflow = join(main_dir, 'workflow', 'Snakefile')
-    work_dir = join(main_dir, 'test_out')
     samples = join(main_dir, 'test_data', 'samples.csv')
     
     # Set location of rule (and program) parameters and resources

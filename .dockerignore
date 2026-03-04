@@ -1,0 +1,55 @@
+# Version control
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Test outputs (generated at runtime, not needed in image)
+test_out/
+test_data/test_out/
+test_data/dataviz/
+
+# Generated config files (written by setup.sh or Dockerfile RUN steps)
+# test_data/parameters.yaml and test_data/samples.csv are generated in Dockerfile
+test_data/parameters.yaml
+test_data/samples.csv
+
+# Conda environments (installed on host, rebuilt inside container)
+conda_envs/
+
+# Local outputs and logs
+*.log
+*.out
+*.err
+logs/
+.snakemake/
+
+# Jupyter notebooks (not needed for pipeline execution)
+Dataviz.ipynb
+*.ipynb
+
+# Local setup script (not needed inside container)
+setup.sh
+
+# Documentation
+docs/
+*.rst
+AUTHORS.rst
+CHANGELOG.rst
+
+# IDE / editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
